@@ -1,25 +1,35 @@
-const express = require('express')
-const httpProxy = require('http-proxy')
+const express = require("express");
+const { createProxyMiddleware } = require("http-proxy-middleware");
 
-const app = express()
-const PORT = 8000
+const app = express();
+const PORT = 8000;
 
-const basePath = 'https://vercel-cloud-bucket.s3.ap-south-1.amazonaws.com/__outputs'
-const proxy = httpProxy.createProxy()
+const basePath =
+  "https://vercel-cloud-bucket.s3.ap-south-1.amazonaws.com/__outputs";
 
-app.use((req, res) => {
+// Proxy middleware
+const s3Proxy = createProxyMiddleware({
+  target: basePath,
+  changeOrigin: true,
+  pathRewrite: (path, req) => {
     const hostname = req.hostname;
-    const subdomain = hostname.split('.')[0];
+    const subdomain = hostname.split(".")[0];
+    return `/${subdomain}${path}`; // Rewrite path for S3
+  },
+  onProxyReq: (proxyReq, req, res) => {
+    // Ensure index.html is served if no file is specified
+    if (req.url === "/") {
+      proxyReq.path += "index.html";
+    }
 
-    const resolvesTo = `${basePath}/${subdomain}`
+    // Add necessary headers for S3 access
+    proxyReq.setHeader("Host", "vercel-cloud-bucket.s3.ap-south-1.amazonaws.com");
+    proxyReq.setHeader("Origin", "*"); // Allow CORS
+  },
+});
 
-    return proxy.web(req, res, { target: resolvesTo, changeOrigin: true })
-})
+app.use("/", s3Proxy);
 
-proxy.on('proxyReq', (proxyReq, req, res) => {
-    const url = req.url;
-    if (url === '/')
-        proxyReq.path += 'index.html'
-})
-
-app.listen(PORT, () => console.log(`Reverse Proxy Running..${PORT}`))
+app.listen(PORT, () =>
+  console.log(`Reverse Proxy Running on Port ${PORT}`)
+);
